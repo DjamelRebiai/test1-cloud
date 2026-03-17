@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Classifier (OAuth Edition)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-top: 50px; }
+        .container { max-width: 800px; }
+        .card { box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .result-box { padding: 15px; border-radius: 5px; margin-top: 15px; display: none; }
+        .btn-custom { width: 100%; margin-top: 10px; }
+        .email-item { border-bottom: 1px solid #eee; padding: 10px 0; }
+        .email-item:last-child { border-bottom: none; }
+        .badge-important { background-color: #dc3545; }
+        .badge-normal { background-color: #198754; }
+        .badge-spam { background-color: #ffc107; color: black; }
+        #spinner { display: none; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-center mb-4">📧 Intelligente Email Classifier (Gmail OAuth2)</h2>
+        
+        <!-- Tab Navigation -->
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab">🛠️ Test Manuel</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="oauth-tab" data-bs-toggle="tab" data-bs-target="#oauth" type="button" role="tab">📥 Fetch Emails (Google Login)</button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="myTabContent">
+            
+            <!-- Manual Test Tab -->
+            <div class="tab-pane fade show active p-4 bg-white border border-top-0 card" id="manual" role="tabpanel">
+                <form id="manualForm">
+                    <div class="mb-3">
+                        <label for="emailText" class="form-label">Entrez le texte de l'email :</label>
+                        <textarea class="form-control" id="emailText" rows="4" placeholder="Ex: urgent meeting tomorrow..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-custom">Classifier l'Email</button>
+                </form>
+                <div id="manualResult" class="result-box alert"></div>
+            </div>
+
+            <!-- Fetch Real Emails Tab -->
+            <div class="tab-pane fade p-4 bg-white border border-top-0 card" id="oauth" role="tabpanel">
+                {% if not logged_in %}
+                <div class="text-center">
+                    <p>Connectez-vous avec votre compte Google pour lire et classifier vos derniers e-mails.</p>
+                    <a href="/login" class="btn btn-outline-dark btn-lg">
+                        <img src="https://developers.google.com/identity/images/g-logo.png" alt="Google Logo" style="width: 20px; margin-right: 10px;">
+                        Se connecter avec Google
+                    </a>
+                </div>
+                {% else %}
+                <div class="alert alert-success d-flex justify-content-between align-items-center">
+                    <span>Connecté avec succès.</span>
+                    <a href="/logout" class="btn btn-sm btn-danger">Se déconnecter</a>
+                </div>
+                
+                <div class="text-center">
+                    <button id="fetchOAuthBtn" class="btn btn-success btn-custom mt-2">
+                        Récupérer et Classifier les derniers emails
+                        <div class="spinner-border spinner-border-sm" id="spinner" role="status"></div>
+                    </button>
+                </div>
+                
+                <div id="oauthResults" class="mt-4" style="display: none;">
+                    <h5>Résultats d'analyse :</h5>
+                    <div id="emailsList" class="list-group"></div>
+                </div>
+                <div id="oauthError" class="alert alert-danger mt-3" style="display: none;"></div>
+                {% endif %}
+            </div>
+            
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Manual Test Handle
+        document.getElementById('manualForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = document.getElementById('emailText').value;
+            if(!text) return;
+
+            const resultBox = document.getElementById('manualResult');
+            resultBox.style.display = 'block';
+            resultBox.className = 'result-box alert alert-secondary';
+            resultBox.innerHTML = 'Analyse en cours...';
+
+            try {
+                const res = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: text })
+                });
+                const data = await res.json();
+                
+                if(data.error) throw new Error(data.error);
+                
+                let badgeClass = 'bg-secondary';
+                if(data.classe === 'important') badgeClass = 'badge-important';
+                if(data.classe === 'normal') badgeClass = 'badge-normal';
+                if(data.classe === 'spam') badgeClass = 'badge-spam';
+
+                resultBox.className = 'result-box alert border';
+                resultBox.innerHTML = `Résultat : <span class="badge ${badgeClass} fs-6">${data.classe.toUpperCase()}</span>`;
+            } catch (err) {
+                resultBox.className = 'result-box alert alert-danger';
+                resultBox.innerHTML = 'Erreur: ' + err.message;
+            }
+        });
+
+        // Fetch Emails OAuth Handle
+        const fetchBtn = document.getElementById('fetchOAuthBtn');
+        if (fetchBtn) {
+            fetchBtn.addEventListener('click', async () => {
+                const spinner = document.getElementById('spinner');
+                const resultsDiv = document.getElementById('oauthResults');
+                const listDiv = document.getElementById('emailsList');
+                const errorDiv = document.getElementById('oauthError');
+
+                spinner.style.display = 'inline-block';
+                resultsDiv.style.display = 'none';
+                errorDiv.style.display = 'none';
+                listDiv.innerHTML = '';
+
+                try {
+                    const res = await fetch('/fetch-emails-oauth');
+                    const data = await res.json();
+
+                    if(data.error) throw new Error(data.error);
+
+                    if(data.emails.length === 0) {
+                        listDiv.innerHTML = '<div class="alert alert-warning">Aucun email trouvé</div>';
+                    } else {
+                        data.emails.forEach(msg => {
+                            let badgeClass = 'bg-secondary';
+                            if(msg.prediction === 'important') badgeClass = 'badge-important';
+                            if(msg.prediction === 'normal') badgeClass = 'badge-normal';
+                            if(msg.prediction === 'spam') badgeClass = 'badge-spam';
+
+                            const snippet = msg.body.substring(0, 100) + (msg.body.length > 100 ? '...' : '');
+
+                            listDiv.innerHTML += `
+                                <div class="list-group-item email-item">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">De: ${msg.sender}</h6>
+                                        <span class="badge ${badgeClass}">${msg.prediction.toUpperCase()}</span>
+                                    </div>
+                                    <p class="mb-1 fw-bold">Sujet: ${msg.subject}</p>
+                                    <small class="text-muted">${snippet}</small>
+                                </div>
+                            `;
+                        });
+                    }
+                    resultsDiv.style.display = 'block';
+
+                } catch (err) {
+                    errorDiv.style.display = 'block';
+                    errorDiv.innerText = 'Erreur lors de la récupération: ' + err.message;
+                } finally {
+                    spinner.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
