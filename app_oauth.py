@@ -10,8 +10,12 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASET_PATH = os.path.join(BASE_DIR, "emails_dataset.csv")
+CLIENT_SECRETS_FILE = os.path.join(BASE_DIR, "client_secret.json")
+
 print("Loading data and training model...")
-df = pd.read_csv("emails_dataset.csv")
+df = pd.read_csv(DATASET_PATH)
 vectorizer = TfidfVectorizer()
 X = vectorizer.fit_transform(df["email"])
 y = df["label"]
@@ -23,7 +27,6 @@ app = Flask(__name__)
 app.secret_key = "super_secret_key"  # Necessary for session cookies
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
-CLIENT_SECRETS_FILE = "client_secret.json"
 
 def clean_text(text):
     if not isinstance(text, str):
